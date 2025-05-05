@@ -1,4 +1,4 @@
-﻿-- Cook Controller
+﻿-- File: Controllers/Cook.lua
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -7,10 +7,14 @@ local Cook = {
     Target = nil
 }
 
-function Cook:Cook(targetPlayer)
-    self.Active = true
+function Cook:Start(targetPlayer)
     self.Target = targetPlayer
-    print("Cooking:", targetPlayer.Name)
+    self.Active = true
+    
+    while self.Active do
+        -- Your cooking logic here
+        RunService.Heartbeat:Wait()
+    end
 end
 
 return Cook
