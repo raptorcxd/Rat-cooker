@@ -2,8 +2,124 @@
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
 local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
 
+-- Constants
+local CONFIG = {
+    TARGET_NAME = "Dummy",
+    CONTAINER_PATH = workspace:WaitForChild("Characters"),
+    TEXT_COLOR = Color3.new(1, 0, 0),
+    TEXT_SIZE = UDim2.new(0, 50, 0, 40),
+    TEXT_OFFSET = Vector3.new(0, 3, 0),
+    REFRESH_RATE = 1,
+    FONT = Enum.Font.SourceSansBold
+}
 
--- Create main window
+-- State management
+local ESP = {
+    Enabled = false,
+    Cache = {},
+    Connections = {},
+    Loop = nil
+}
+
+-- Core functions
+local function createESP(targetModel)
+    if not targetModel or not targetModel:FindFirstChild("HumanoidRootPart") then return end
+    if ESP.Cache[targetModel] then return end
+
+    local billboardGui = Instance.new("BillboardGui")
+    billboardGui.Adornee = targetModel.HumanoidRootPart
+    billboardGui.Size = CONFIG.TEXT_SIZE
+    billboardGui.StudsOffset = CONFIG.TEXT_OFFSET
+    billboardGui.AlwaysOnTop = true
+    billboardGui.Name = "ESP_"..targetModel.Name
+    billboardGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = targetModel.Name
+    label.TextColor3 = CONFIG.TEXT_COLOR
+    label.TextScaled = true
+    label.Font = CONFIG.FONT
+    label.Parent = billboardGui
+
+    billboardGui.Parent = game:GetService("CoreGui")
+    ESP.Cache[targetModel] = billboardGui
+
+    -- Cleanup connection
+    ESP.Connections[targetModel] = targetModel.AncestryChanged:Connect(function(_, newParent)
+        if not newParent then
+            if ESP.Cache[targetModel] then
+                ESP.Cache[targetModel]:Destroy()
+                ESP.Cache[targetModel] = nil
+            end
+            if ESP.Connections[targetModel] then
+                ESP.Connections[targetModel]:Disconnect()
+                ESP.Connections[targetModel] = nil
+            end
+        end
+    end)
+end
+
+local function clearESP()
+    for model, gui in pairs(ESP.Cache) do
+        gui:Destroy()
+        if ESP.Connections[model] then
+            ESP.Connections[model]:Disconnect()
+        end
+    end
+    ESP.Cache = {}
+    ESP.Connections = {}
+end
+
+local function updateESPs()
+    if not ESP.Enabled then return end
+    
+    -- Update existing ESPs
+    for model, gui in pairs(ESP.Cache) do
+        if not model.Parent then
+            gui:Destroy()
+            ESP.Cache[model] = nil
+            if ESP.Connections[model] then
+                ESP.Connections[model]:Disconnect()
+                ESP.Connections[model] = nil
+            end
+        end
+    end
+    
+    -- Add new ESPs
+    for _, model in ipairs(CONFIG.CONTAINER_PATH:GetChildren()) do
+        if model.Name == CONFIG.TARGET_NAME then
+            createESP(model)
+        end
+    end
+end
+
+local function toggleESP(state)
+    ESP.Enabled = state
+    
+    if state then
+        -- Initial scan
+        updateESPs()
+        
+        -- Start update loop
+        ESP.Loop = task.spawn(function()
+            while ESP.Enabled do
+                updateESPs()
+                task.wait(CONFIG.REFRESH_RATE)
+            end
+        end)
+    else
+        -- Cleanup
+        clearESP()
+        if ESP.Loop then
+            task.cancel(ESP.Loop)
+            ESP.Loop = nil
+        end
+    end
+end
+
+-- UI Setup
 local Window = Fluent:CreateWindow({
     Title = "Rat Cooker",
     SubTitle = "Anti rat police",
@@ -14,104 +130,30 @@ local Window = Fluent:CreateWindow({
     MinimizeKey = Enum.KeyCode.RightControl
 })
 
--- Create tabs
 local Tabs = {
     Main = Window:AddTab({ Title = "Main", Icon = "home" }),
     Players = Window:AddTab({ Title = "Players", Icon = "users" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
-local Options = Fluent.Options
-
--- Dummy ESP Variables
-local espConnection = nil
-local dummyESPEnabled = false
-
--- Services
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-
--- Helper functions
-local function findDummy()
-    for _, child in ipairs(workspace:GetDescendants()) do
-        if child.Name == "Dummy" and child:IsA("Model") then
-            return child
-        end
-    end
-    return nil
-end
-
-local function createESP(dummy)
-    if dummy:FindFirstChild("DummyESP") then return end
-
-    local highlight = Instance.new("Highlight")
-    highlight.Name = "DummyESP"
-    highlight.FillColor = Color3.fromRGB(255, 0, 0)
-    highlight.OutlineColor = Color3.fromRGB(255, 255, 0)
-    highlight.FillTransparency = 0.5
-    highlight.OutlineTransparency = 0
-    highlight.Parent = dummy
-
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "DummyNameTag"
-    billboard.Size = UDim2.new(0, 200, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 3, 0)
-    billboard.AlwaysOnTop = true
-    billboard.LightInfluence = 1
-    billboard.Parent = dummy
-
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, 0, 1, 0)
-    textLabel.Text = "DUMMY"
-    textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-    textLabel.TextScaled = true
-    textLabel.BackgroundTransparency = 1
-    textLabel.Font = Enum.Font.GothamBold
-    textLabel.Parent = billboard
-
-    local localPlayer = Players.LocalPlayer
-    local humanoidRootPart = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-
-    if humanoidRootPart then
-        espConnection = RunService.Heartbeat:Connect(function()
-            if dummy:FindFirstChild("HumanoidRootPart") and humanoidRootPart then
-                local distance = (humanoidRootPart.Position - dummy.HumanoidRootPart.Position).Magnitude
-                textLabel.Text = string.format("DUMMY\n%d studs", math.floor(distance))
-            end
-        end)
-    end
-end
-
-local function removeESP(dummy)
-    if dummy:FindFirstChild("DummyESP") then dummy.DummyESP:Destroy() end
-    if dummy:FindFirstChild("DummyNameTag") then dummy.DummyNameTag:Destroy() end
-    if espConnection then espConnection:Disconnect() espConnection = nil end
-end
-
-local function toggleDummyESP(enabled)
-    dummyESPEnabled = enabled
-    local dummy = findDummy()
-
-    if enabled and dummy then
-        createESP(dummy)
-    elseif not enabled and dummy then
-        removeESP(dummy)
-    end
-end
-
--- ✅ Add toggle to Players tab (Fluent-style)
-local Toggle = Tabs.Players:AddToggle("DummyESP", {
+-- Add ESP Toggle
+Tabs.Players:AddToggle("DummyESP", {
     Title = "Dummy ESP",
-    Default = false
+    Default = false,
+    Callback = toggleESP
 })
 
-Toggle:OnChanged(function()
-    toggleDummyESP(Options.DummyESP.Value)
-end)
+-- Set up container monitoring
+table.insert(ESP.Connections, CONFIG.CONTAINER_PATH.ChildAdded:Connect(function(child)
+    if child.Name == CONFIG.TARGET_NAME then
+        task.wait(0.1) -- Allow model to fully load
+        if ESP.Enabled then
+            createESP(child)
+        end
+    end
+end))
 
-Options.DummyESP:SetValue(false)
-
--- Save/config setup
+-- Initialize Fluent UI
 SaveManager:SetLibrary(Fluent)
 InterfaceManager:SetLibrary(Fluent)
 SaveManager:IgnoreThemeSettings()
@@ -121,15 +163,25 @@ SaveManager:SetFolder("RatCooker/configs")
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
 
--- Final steps
+Window:SelectTab(1)
 Fluent:Notify({
     Title = "Script Loaded",
-    Duration = 5
+    Content = "Dummy ESP system initialized",
+    Duration = 3
 })
-
-Window:SelectTab(1)
 Fluent:SetTheme("Dark")
 SaveManager:LoadAutoloadConfig()
-
--- ✅ REQUIRED to render UI
 Fluent:Init()
+
+-- Cleanup on script termination
+game:GetService("UserInputService").WindowFocused:Connect(function()
+    if not ESP.Enabled then return end
+    updateESPs()
+end)
+
+table.insert(ESP.Connections, game:GetService("Players").LocalPlayer.CharacterAdded:Connect(function()
+    if ESP.Enabled then
+        task.wait(1) -- Wait for character to load
+        updateESPs()
+    end
+end))
