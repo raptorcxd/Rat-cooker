@@ -1,0 +1,168 @@
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Create window (your exact template)
+local Window = Fluent:CreateWindow({
+    Title = "Fluent " .. Fluent.Version,
+    SubTitle = "Name Spoofer Pro",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+local Tabs = {
+    Main = Window:AddTab({ Title = "Main", Icon = "" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+}
+
+local Options = Fluent.Options
+
+-- Name Spoofing System
+local playerList = {}
+local selectedPlayer = nil
+local spoofActive = false
+local nameCache = {}
+local metatableHooked = false
+
+local function spoofNames(targetPlayer, fakeName, fakeDisplay)
+    -- Cache original names
+    if not nameCache[targetPlayer] then
+        nameCache[targetPlayer] = {
+            Name = targetPlayer.Name,
+            DisplayName = targetPlayer.DisplayName
+        }
+    end
+    
+    -- Hook metatable for username only (once)
+    if not metatableHooked then
+        local mt = getrawmetatable(game)
+        setreadonly(mt, false)
+        
+        local oldIndex = mt.__index
+        mt.__index = newcclosure(function(t, k)
+            if spoofActive and t == targetPlayer and k == "Name" then
+                return fakeName
+            end
+            return oldIndex(t, k)
+        end)
+        metatableHooked = true
+    end
+    
+    -- Directly change display name
+    targetPlayer.DisplayName = fakeDisplay
+    
+    -- Update text elements (separate handling)
+    for _, uiObject in pairs(game:GetDescendants()) do
+        if uiObject:IsA("TextLabel") or uiObject:IsA("TextButton") then
+            -- Handle username (@) replacement
+            if uiObject.Text:find("@"..nameCache[targetPlayer].Name) then
+                uiObject.Text = uiObject.Text:gsub("@"..nameCache[targetPlayer].Name, "@"..fakeName)
+            elseif uiObject.Text:find(nameCache[targetPlayer].Name) then
+                uiObject.Text = uiObject.Text:gsub(nameCache[targetPlayer].Name, fakeName)
+            end
+            
+            -- Handle display name replacement
+            if uiObject.Text:find(nameCache[targetPlayer].DisplayName) then
+                uiObject.Text = uiObject.Text:gsub(nameCache[targetPlayer].DisplayName, fakeDisplay)
+            end
+        end
+    end
+end
+
+-- Refresh player list
+local function refreshPlayers()
+    playerList = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        table.insert(playerList, player.Name)
+    end
+end
+
+-- Add spoofing controls
+do
+    local PlayerDropdown = Tabs.Main:AddDropdown("PlayerSelect", {
+        Title = "Select Player",
+        Values = {},
+        Default = nil,
+        Callback = function(value)
+            selectedPlayer = Players:FindFirstChild(value)
+        end
+    })
+
+    local FakeNameInput = Tabs.Main:AddInput("FakeName", {
+        Title = "Fake Username (with @)",
+        Default = "cckamaki",
+        Placeholder = "Enter username without @"
+    })
+
+    local FakeDisplayInput = Tabs.Main:AddInput("FakeDisplay", {
+        Title = "Fake Display Name",
+        Default = "ratjamal",
+        Placeholder = "Enter display name"
+    })
+
+    local SpoofToggle = Tabs.Main:AddToggle("SpoofToggle", {
+        Title = "Enable Spoofing",
+        Default = false,
+        Callback = function(state)
+            spoofActive = state
+            if state and selectedPlayer then
+                spoofNames(selectedPlayer, FakeNameInput.Value, FakeDisplayInput.Value)
+                Fluent:Notify({
+                    Title = "Spoofing Active",
+                    Content = ("Username: @%s\nDisplay Name: %s"):format(
+                        FakeNameInput.Value,
+                        FakeDisplayInput.Value
+                    ),
+                    Duration = 5
+                })
+            else
+                -- Restore original names
+                if selectedPlayer and nameCache[selectedPlayer] then
+                    spoofNames(selectedPlayer, nameCache[selectedPlayer].Name, nameCache[selectedPlayer].DisplayName)
+                end
+            end
+        end
+    })
+
+    -- Auto-refresh system
+    Players.PlayerAdded:Connect(function()
+        refreshPlayers()
+        PlayerDropdown:SetValues(playerList)
+    end)
+
+    Players.PlayerRemoving:Connect(function()
+        refreshPlayers()
+        PlayerDropdown:SetValues(playerList)
+    end)
+
+    -- Initial setup
+    refreshPlayers()
+    PlayerDropdown:SetValues(playerList)
+end
+
+-- Keep all your original template elements below
+-- (toggles, sliders, colorpickers, etc. remain unchanged)
+
+-- Required template initialization
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+SaveManager:IgnoreThemeSettings()
+InterfaceManager:SetFolder("FluentScriptHub")
+SaveManager:SetFolder("FluentScriptHub/specific-game")
+
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+
+Window:SelectTab(1)
+
+Fluent:Notify({
+    Title = "Name Spoofer Ready",
+    Content = "Select player and enter names",
+    Duration = 5
+})
+
+SaveManager:LoadAutoloadConfig()
+Fluent:Init()
