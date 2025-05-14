@@ -29,6 +29,11 @@ local Options = Fluent.Options
 
 --// ========== FUNCTION LOGIC ==========
 
+-- Helper functions
+local function getRoot(character)
+    return character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso"))
+end
+
 -- Fly logic
 local flyConn, flyBV
 local function flyToggle(state)
@@ -69,7 +74,10 @@ local tpwalkSpeed = 1
 local function startTpwalk(speed)
     tpwalking = true
     local char = Players.LocalPlayer.Character
-    local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+    if not char then return end
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    if not hum then return end
+    
     tpwalkConn = RunService.Heartbeat:Connect(function(delta)
         if not tpwalking or not char or not hum or not hum.Parent then
             tpwalking = false
@@ -95,11 +103,161 @@ local function tpwalkToggle(state, speed)
     end
 end
 
+-- Dummy ESP logic
+local dummyESPEnabled = false
+local dummyESPCache = {}
+local dummyTargetName = "Dummy"
+local dummyContainer = workspace:WaitForChild("Characters", 10) or workspace -- Fallback to workspace if Characters doesn't exist
+local dummyTextColor = Color3.new(1, 0, 0)
+local dummyTextSize = UDim2.new(0, 50, 0, 40)
+local dummyTextOffset = Vector3.new(0, 3, 0)
+local dummyRefreshRate = 1
+
+local function createDummyESP(model)
+    if not model or not model:FindFirstChild("HumanoidRootPart") or dummyESPCache[model] then return end
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Adornee = model.HumanoidRootPart
+    billboard.Size = dummyTextSize
+    billboard.StudsOffset = dummyTextOffset
+    billboard.AlwaysOnTop = true
+    billboard.Name = "ESP"
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = model.Name
+    label.TextColor3 = dummyTextColor
+    label.TextScaled = true
+    label.Font = Enum.Font.SourceSansBold
+    label.Parent = billboard
+
+    billboard.Parent = game:GetService("CoreGui")
+    dummyESPCache[model] = billboard
+
+    model.AncestryChanged:Connect(function(_, newParent)
+        if not newParent and dummyESPCache[model] then
+            dummyESPCache[model]:Destroy()
+            dummyESPCache[model] = nil
+        end
+    end)
+end
+
+local function clearDummyESP()
+    for model, gui in pairs(dummyESPCache) do
+        gui:Destroy()
+        dummyESPCache[model] = nil
+    end
+end
+
+local function updateDummyESP()
+    if not dummyESPEnabled then clearDummyESP() return end
+    for _, model in ipairs(dummyContainer:GetChildren()) do
+        if model.Name == dummyTargetName then
+            createDummyESP(model)
+        elseif dummyESPCache[model] then
+            dummyESPCache[model]:Destroy()
+            dummyESPCache[model] = nil
+        end
+    end
+end
+
+if dummyContainer then
+    dummyContainer.ChildAdded:Connect(function(child)
+        if child.Name == dummyTargetName and dummyESPEnabled then
+            task.wait(0.1)
+            createDummyESP(child)
+        end
+    end)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(dummyRefreshRate)
+        updateDummyESP()
+    end
+end)
+
+-- Main Bring function
+local function bringPlayer(targetPlayer)
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    local speaker = Players.LocalPlayer
+    local char = speaker.Character
+    if not char or not targetPlayer or not targetPlayer.Character then return end
+
+    -- Stand up if sitting
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if humanoid and humanoid.SeatPart then
+        humanoid.Sit = false
+        task.wait(0.1)
+    end
+
+    -- Anchor all parts
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and not part.Anchored then
+            part.Anchored = true
+        end
+    end
+
+    -- Try to bring the player using Swift Kick
+    pcall(function()
+        local moveset = speaker.PlayerGui:FindFirstChild("Main")
+            and speaker.PlayerGui.Main:FindFirstChild("Moveset")
+            and speaker.PlayerGui.Main.Moveset:FindFirstChild("Swift Kick")
+        if not moveset then return end
+
+        while moveset.Cooldown.Size == UDim2.new(1, 0, 0, 0) do
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+            if targetPlayer and targetPlayer.Character then
+                local offset = -3 -- Distance behind
+                local targetRoot = getRoot(targetPlayer.Character)
+                local myRoot = getRoot(char)
+                if targetRoot and myRoot then
+                    local behindVector = targetRoot.CFrame.LookVector * offset
+                    myRoot.CFrame = targetRoot.CFrame + behindVector
+                end
+            else
+                break
+            end
+            task.wait()
+        end
+    end)
+
+    -- Unanchor all parts
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and part.Anchored then
+            part.Anchored = false
+        end
+    end
+end
+
 --// ========== ADD UI ELEMENTS TO TABS ==========
 
 Tabs.Main:AddParagraph({
     Title = "Cooking tab",
-    Content = ""
+    Content = "pig"
+})
+
+Tabs.Main:AddButton({
+    Title = "Bring Player",
+    Callback = function()
+        local targetPlayer = Players.LocalPlayer 
+        bringPlayer(targetPlayer)
+    end
+})
+
+Tabs.Features:AddToggle("DummyESP", {
+    Title = "Dummy ESP",
+    Default = false,
+    Callback = function(state)
+        dummyESPEnabled = state
+        if state then
+            updateDummyESP()
+        else
+            clearDummyESP()
+        end
+    end
 })
 
 Tabs.Features:AddToggle("Fly", {
