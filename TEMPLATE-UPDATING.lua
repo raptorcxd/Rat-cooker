@@ -107,7 +107,7 @@ end
 local dummyESPEnabled = false
 local dummyESPCache = {}
 local dummyTargetName = "Dummy"
-local dummyContainer = workspace:WaitForChild("Characters", 10) or workspace -- Fallback to workspace if Characters doesn't exist
+local dummyContainer = workspace:WaitForChild("Characters", 10) or workspace
 local dummyTextColor = Color3.new(1, 0, 0)
 local dummyTextSize = UDim2.new(0, 50, 0, 40)
 local dummyTextOffset = Vector3.new(0, 3, 0)
@@ -235,15 +235,67 @@ end
 --// ========== ADD UI ELEMENTS TO TABS ==========
 
 Tabs.Main:AddParagraph({
-    Title = "Cooking tab",
-    Content = "pig"
+    Title = "Bring rat",
+    Content = "use todo"
 })
 
+-- Get player list for dropdown
+local function getPlayerList()
+    local playerList = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= Players.LocalPlayer then
+            table.insert(playerList, player.Name)
+        end
+    end
+    return playerList
+end
+
+-- Refresh player list function
+local function refreshPlayerList()
+    playerDropdown:SetValues(getPlayerList())
+end
+
+-- Auto-refresh player list when players join/leave
+Players.PlayerAdded:Connect(refreshPlayerList)
+Players.PlayerRemoving:Connect(refreshPlayerList)
+
+-- Create dropdown for player selection
+local playerDropdown = Tabs.Main:AddDropdown("PlayerSelect", {
+    Title = "Select Player",
+    Values = getPlayerList(),
+    Multi = false,
+    Default = nil,
+})
+
+-- Add refresh button
 Tabs.Main:AddButton({
-    Title = "Bring Player",
+    Title = "Refresh Player List",
+    Callback = refreshPlayerList
+})
+
+-- Add bring button with dropdown selection
+Tabs.Main:AddButton({
+    Title = "Bring Selected Player",
     Callback = function()
-        local targetPlayer = Players.LocalPlayer 
-        bringPlayer(targetPlayer)
+        local selectedPlayerName = Options.PlayerSelect.Value
+        if selectedPlayerName then
+            local targetPlayer = Players:FindFirstChild(selectedPlayerName)
+            if targetPlayer then
+                bringPlayer(targetPlayer)
+            else
+                Fluent:Notify({
+                    Title = "Error",
+                    Content = "Player not found!",
+                    Duration = 3
+                })
+            end
+        else
+            Fluent:Notify({
+                Title = "Error",
+                Content = "No player selected!",
+                Duration = 3
+            })
+        end
     end
 })
 
@@ -317,3 +369,4 @@ Fluent:Notify({
 })
 Fluent:SetTheme("Dark")
 SaveManager:LoadAutoloadConfig()
+
