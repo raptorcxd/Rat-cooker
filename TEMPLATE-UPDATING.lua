@@ -1,4 +1,4 @@
--- This script was protected using the MoonVeil Obfuscator v1.1.2 [https://moonveil.cc]
+
 
 local m,Pd,Wc=pairs,type,getmetatable;
 local wd=getfenv()
